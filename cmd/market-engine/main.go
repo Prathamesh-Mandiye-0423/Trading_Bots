@@ -10,6 +10,7 @@ import (
 	"github.com/Prathamesh-Mandiye-0423/trading-platform/internal/events"
 	"github.com/Prathamesh-Mandiye-0423/trading-platform/internal/matching"
 	"github.com/Prathamesh-Mandiye-0423/trading-platform/internal/models"
+	"github.com/Prathamesh-Mandiye-0423/trading-platform/internal/supervisor"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/gofiber/fiber/v3/middleware/recover"
@@ -49,7 +50,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go pipeTradeEvents(ctx, registry, publisher)
-
+	wireSupervisor(ctx, brokers)
 	// Build Fiber app
 	app := fiber.New(fiber.Config{AppName: "Market Engine v0.1"})
 	app.Use(recover.New())
@@ -114,4 +115,23 @@ func publishTrade(ctx context.Context, pub *events.Publisher, trade *models.Trad
 		Str("quantity", trade.Quantity.String()).
 		Str("notional", trade.Notional.String()).
 		Msg("TRADE PUBLISHED")
+}
+
+// wireSupvisor starts the supervisor in the background.
+// Call this from main() after the registry is set up.
+func wireSupervisor(ctx context.Context, brokers []string) {
+	sup, err := supervisor.New(supervisor.Config{
+		BrokerAddrs:     brokers,
+		MarketEngineURL: "http://localhost:8080",
+	})
+	if err != nil {
+		log.Error().Err(err).Msg("failed to start supervisor — running without risk checks")
+		return
+	}
+	go func() {
+		if err := sup.Start(ctx); err != nil && ctx.Err() == nil {
+			log.Error().Err(err).Msg("supervisor exited unexpectedly")
+		}
+	}()
+	log.Info().Msg("supervisor started")
 }

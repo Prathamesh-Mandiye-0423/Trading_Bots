@@ -119,7 +119,7 @@ class BotClient:
         resp = await self._delete(f"api/v1/orders/{symbol}/{order_id}")
         return self._parse_order(resp)
 
-    async def get_order_book(self, symbol:str, depth: int =10)->OrderBook:
+    async def get_orderbook(self, symbol:str, depth: int =10)->OrderBook:
         "Fetch current Order book snapshot"
         resp= await self._get(f"/api/v1/markets/{symbol}/order_book?depth={depth}")
         return OrderBook{
@@ -165,4 +165,93 @@ class BotClient:
             task.cancel()
             await asyncio.gather(task, return_exceptions= True)
 
-            
+    async def _poll_loop(self, symbol:str)->None:
+        # Internal Polling loop
+        while self._running and symbol in self._subscriptions:
+            try:
+                book = await self.get_orderbook(symbol, depth=1)
+                ticker = Ticker(
+                    symbol=symbol,
+                    bid_price=book.bids[0].price if book.bids else "0.00000000",
+                    ask_price=book.asks[0].price if book.asks else "0.00000000",
+                    last_price=book.bids[0].price if book.bids else "0.00000000",
+                    last_qty="0.00000000",
+                    spread= book.spread,
+                    timestamp=book.timestamp,
+                )
+
+                callbacks= self._subscriptions.get(symbol,[])
+                await asyncio.gather(*[cb(ticker) for cb in callbacks])
+            except Exception as e:
+                self._logger.error(f"Error in poll loop for {symbol}: {e}")
+                await asyncio.sleep(0.5)
+
+
+    async def _get(self, path:str)->dict:
+        resp = await self._http.get(f"{self.api_url}{path}")
+        # check request url 
+        return self._check(resp)
+
+    async def _post(self,path:str, body:dict)->dict:
+        resp= await self._http.post(f"{self.api_url}{path}", json= body)
+        return self._check(resp)
+
+    async def _delete(self, path:str)->dict:
+        resp = wait self._http.delete(f"{self.api_url}{path}")
+        return self._check(resp)
+
+    def _check(self,resp: httpx.Response)->dict:
+        data=resp.json()
+        if resp.is_error:
+            raise BotClientError(
+                f"{resp.request.method} {resp.request.url} "
+                f"failed {resp.status_code}: {data.get('error', resp.text)}"
+            )
+        return data
+
+     def _parse_order(self, data: dict) -> Order:
+        return Order(
+            id         = data["id"],
+            bot_id     = data["bot_id"],
+            symbol     = data["symbol"],
+            side       = Side(data["side"]),
+            type       = OrderType(data["type"]),
+            price      = data["price"],
+            quantity   = data["quantity"],
+            remaining  = data["remaining"],
+            status     = data["status"],
+            created_at = data["created_at"],
+            updated_at = data["updated_at"],
+        )
+
+# ============================================================
+# Decimal price arithmetic helpers
+# Use these instead of float() for any price math.
+# Python's built-in decimal.Decimal — no pip install needed.
+# ============================================================
+ 
+PRECISION = Decimal("0.00000001")
+ 
+ 
+def price_add(a: str, b: str) -> str:
+    """
+    Add two price strings exactly.
+    price_add("50000.00", "1.00") → "50001.00000000"
+    """
+    return str((Decimal(a) + Decimal(b)).quantize(PRECISION, ROUND_HALF_UP))
+ 
+ 
+def price_sub(a: str, b: str) -> str:
+    """
+    Subtract two price strings exactly.
+    price_sub("50000.00", "1.00") → "49999.00000000"
+    """
+    return str((Decimal(a) - Decimal(b)).quantize(PRECISION, ROUND_HALF_UP))
+ 
+ 
+def price_mul(a: str, b: str) -> str:
+    """
+    Multiply two price strings exactly.
+    price_mul("50000.00", "0.5") → "25000.00000000"
+    """
+    return str((Decimal(a) * Decimal(b)).quantize(PRECISION, ROUND_HALF_UP))

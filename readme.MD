@@ -367,6 +367,3 @@ This platform is under active development. The most impactful next contributions
 
 ---
 
-## License
-
-MIT

@@ -33,7 +33,7 @@ class BotClientError(Exception):
 TickerCallback = Callable[[Ticker], Awaitable[None]]
 
 class BotClient:
-        """
+    """
     Async bot client. Always use as an async context manager:
  
         async with BotClient(...) as client:
@@ -86,7 +86,7 @@ class BotClient:
         price: Optional[str]=None,
         order_type: OrderType = OrderType.LIMIT,
         )->Order:
-           """
+        """
         Place a limit or market order.
  
         IMPORTANT: price and quantity must be strings, never floats.
@@ -121,23 +121,23 @@ class BotClient:
 
     async def get_orderbook(self, symbol:str, depth: int =10)->OrderBook:
         "Fetch current Order book snapshot"
-        resp= await self._get(f"/api/v1/markets/{symbol}/order_book?depth={depth}")
-        return OrderBook{
-            symbol =resp["symbol"],
-            bids= [PriceLevel(**b) for b in resp["bids"]],
-            asks= [PriceLevel(**a) for a in resp["asks"]],
-            spread= resp["spread"]
-            timestamp= resp["timestamp"],
-        }
+        resp = await self._get(f"/api/v1/markets/{symbol}/order_book?depth={depth}")
+        return OrderBook(
+            symbol=resp["symbol"],
+            bids=[PriceLevel(**b) for b in resp["bids"]],
+            asks=[PriceLevel(**a) for a in resp["asks"]],
+            spread=resp["spread"],
+            timestamp=resp["timestamp"],
+        )
     async def get_markets(self)->list[str]:
         "Return all active trading symbols"
-        resp= await.self._get("api/v1//markets")
+        resp = await self._get("api/v1/markets")
         return resp["symbols"]
 
     # Subscription
 
     async def subscribe(self, symbol:str, callback: TickerCallback)->None:
-         """
+        """
         Subscribe to live ticker updates for a symbol.
         callback is an async function called every ~500ms.
         Non-blocking — spawns a background task.
@@ -197,7 +197,7 @@ class BotClient:
         return self._check(resp)
 
     async def _delete(self, path:str)->dict:
-        resp = wait self._http.delete(f"{self.api_url}{path}")
+        resp = await self._http.delete(f"{self.api_url}{path}")
         return self._check(resp)
 
     def _check(self,resp: httpx.Response)->dict:
@@ -209,7 +209,7 @@ class BotClient:
             )
         return data
 
-     def _parse_order(self, data: dict) -> Order:
+    def _parse_order(self, data: dict) -> Order:
         return Order(
             id         = data["id"],
             bot_id     = data["bot_id"],

@@ -97,7 +97,10 @@ func main() {
 	app := fiber.New(fiber.Config{AppName: "Market Engine v0.1"})
 	app.Use(recover.New())
 	app.Use(logger.New())
-
+	// Added for testing
+	app.Get("/", func(c fiber.Ctx) error {
+		return c.SendString("Market Engine is Online")
+	})
 	app.Get("/health", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok"})
 	})

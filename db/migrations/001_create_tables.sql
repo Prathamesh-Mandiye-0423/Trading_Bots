@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS trades(
     price NUMERIC(20,8) NOT NULL,
     quantity NUMERIC(20,8) NOT NULL,
     notional NUMERIC(20,8) NOT NULL,
-    executed_at TIMESTAMPTZ NOT NULL
+    executed_at TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (id,executed_at)
 );
 
@@ -81,11 +81,13 @@ CREATE TABLE IF NOT EXISTS ml_snapshots (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     symbol TEXT NOT NULL,
     n_samples INT NOT NULL,
-    accuracy FLAOT NOT NULL,
+    accuracy FLOAT NOT NULL,
     weights JSONB,
     signal_dist JSONB,
     feature_importance JSONB,
     recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_ml_snapshots_symbol() ON ml_snapshots(symbol, recorded_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ml_snapshots_symbol ON ml_snapshots(symbol, recorded_at DESC);
+-- Optional: Automatically drop trade data older than 30 days
+SELECT add_retention_policy('trades', INTERVAL '30 days');

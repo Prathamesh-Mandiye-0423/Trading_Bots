@@ -7,6 +7,7 @@ import (
 	"syscall"
 
 	"github.com/Prathamesh-Mandiye-0423/trading-platform/internal/api"
+	"github.com/Prathamesh-Mandiye-0423/trading-platform/internal/db"
 	"github.com/Prathamesh-Mandiye-0423/trading-platform/internal/events"
 	"github.com/Prathamesh-Mandiye-0423/trading-platform/internal/matching"
 	"github.com/Prathamesh-Mandiye-0423/trading-platform/internal/models"
@@ -21,7 +22,7 @@ import (
 
 func main() {
 	if err := godotenv.Load(); err != nil {
-		log.Warn().Msg(".env file not found, using environment variables")
+		log.Warn().Msg(".env file not found")
 	}
 
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
@@ -29,15 +30,29 @@ func main() {
 		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	}
 
-	// Connect to Redpanda
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// ---- Database ----
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgres://trading:trading@localhost:5432/trading"
+	}
+	if err := db.Connect(ctx, dsn); err != nil {
+		log.Fatal().Err(err).Msg("failed to connect to database")
+	}
+	defer db.Close()
+
+	// ---- Redpanda ----
 	brokers := []string{"localhost:19092"}
+
 	publisher, err := events.NewPublisher(brokers)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to connect to Redpanda")
 	}
 	defer publisher.Close()
 
-	// Build market registry
+	// ---- Market registry ----
 	registry := matching.NewRegistry(4096)
 	for _, sym := range []string{"BTC-USD", "ETH-USD", "SOL-USD"} {
 		if err := registry.AddMarket(sym); err != nil {
@@ -46,12 +61,39 @@ func main() {
 		log.Info().Str("symbol", sym).Msg("market registered")
 	}
 
-	// Start trade event pipeline: matching engine → Redpanda
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// ---- Background services ----
 	go pipeTradeEvents(ctx, registry, publisher)
-	wireSupervisor(ctx, brokers)
-	// Build Fiber app
+
+	// DB writer — consumes from Redpanda and persists to PostgreSQL
+	dbWriter, err := db.NewWriter(brokers)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to start db writer — running without persistence")
+	} else {
+		go func() {
+			if err := dbWriter.Start(ctx); err != nil && ctx.Err() == nil {
+				log.Error().Err(err).Msg("db writer exited unexpectedly")
+			}
+		}()
+		log.Info().Msg("db writer started")
+	}
+
+	// Supervisor — risk engine
+	sup, err := supervisor.New(supervisor.Config{
+		BrokerAddrs:     brokers,
+		MarketEngineURL: "http://localhost:8080",
+	})
+	if err != nil {
+		log.Error().Err(err).Msg("failed to start supervisor")
+	} else {
+		go func() {
+			if err := sup.Start(ctx); err != nil && ctx.Err() == nil {
+				log.Error().Err(err).Msg("supervisor exited unexpectedly")
+			}
+		}()
+		log.Info().Msg("supervisor started")
+	}
+
+	// ---- HTTP server ----
 	app := fiber.New(fiber.Config{AppName: "Market Engine v0.1"})
 	app.Use(recover.New())
 	app.Use(logger.New())
@@ -62,8 +104,9 @@ func main() {
 
 	h := api.NewHandler(registry)
 	h.RegisterRoutes(app)
+	api.RegisterDBRoutes(app)
 
-	// Graceful shutdown
+	// ---- Graceful shutdown ----
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 
@@ -84,8 +127,6 @@ func main() {
 	app.Shutdown()
 }
 
-// pipeTradeEvents drains the matching engine's trade channel
-// and publishes each trade + order events to Redpanda
 func pipeTradeEvents(ctx context.Context, registry *matching.Registry, pub *events.Publisher) {
 	for {
 		select {
@@ -101,37 +142,14 @@ func pipeTradeEvents(ctx context.Context, registry *matching.Registry, pub *even
 }
 
 func publishTrade(ctx context.Context, pub *events.Publisher, trade *models.Trade) {
-	// Publish the trade execution event
-	tradeEvent := events.TradeEventFromModel(trade)
-	if err := pub.PublishTrade(ctx, tradeEvent); err != nil {
-		log.Error().Err(err).Str("trade_id", trade.ID).Msg("failed to publish trade event")
+	if err := pub.PublishTrade(ctx, events.TradeEventFromModel(trade)); err != nil {
+		log.Error().Err(err).Str("trade_id", trade.ID).Msg("failed to publish trade")
 		return
 	}
-
 	log.Info().
 		Str("trade_id", trade.ID).
 		Str("symbol", trade.Symbol).
 		Str("price", trade.Price.String()).
 		Str("quantity", trade.Quantity.String()).
-		Str("notional", trade.Notional.String()).
-		Msg("TRADE PUBLISHED")
-}
-
-// wireSupvisor starts the supervisor in the background.
-// Call this from main() after the registry is set up.
-func wireSupervisor(ctx context.Context, brokers []string) {
-	sup, err := supervisor.New(supervisor.Config{
-		BrokerAddrs:     brokers,
-		MarketEngineURL: "http://localhost:8080",
-	})
-	if err != nil {
-		log.Error().Err(err).Msg("failed to start supervisor — running without risk checks")
-		return
-	}
-	go func() {
-		if err := sup.Start(ctx); err != nil && ctx.Err() == nil {
-			log.Error().Err(err).Msg("supervisor exited unexpectedly")
-		}
-	}()
-	log.Info().Msg("supervisor started")
+		Msg("trade published")
 }

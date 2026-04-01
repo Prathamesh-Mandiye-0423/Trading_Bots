@@ -193,3 +193,10 @@ func Max(a, b Decimal) Decimal {
 	}
 	return b
 }
+
+// Float64 converts the Decimal to a float64.
+// NOTE: Only use this for display, charting, or candle aggregation.
+// Never use float64 for order matching or financial arithmetic.
+func (d Decimal) Float64() float64 {
+	return float64(d.value) / float64(Scale)
+}

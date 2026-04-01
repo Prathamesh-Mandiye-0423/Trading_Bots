@@ -44,6 +44,24 @@ services:
     depends_on:
       redpanda:
         condition: service_healthy
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: trading-postgres
+    environment:
+      POSTGRES_USER: trading
+      POSTGRES_PASSWORD: trading
+      POSTGRES_DB: trading
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/migration:/docker-entrypoint-init.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trading -d trading"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   redpanda_data:
+  postgres_data:

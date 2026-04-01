@@ -39,6 +39,8 @@ func NewWriter(brokers []string) (*Writer, error) {
 		consumer:     consumer,
 		candleBuffer: make(map[string]*candleAccumulator),
 	}
+	consumer.Register(events.TopicTradeExecuted, w.handleTrade)
+	consumer.Register(events.TopicOrderUpdated, w.handleOrder)
 	return w, nil
 }
 
@@ -57,7 +59,7 @@ func (w *Writer) Stop() {
 
 // Trade Handler
 
-func (w *Writer) handleTrade(ctx context.Context, topic string, key, value []byte, trade events.TradeEvent) error {
+func (w *Writer) handleTrade(ctx context.Context, topic string, key, value []byte) error {
 	trade, err := events.UnmarshalTrade(value)
 	if err != nil {
 		log.Error().Err(err).Msg("db failed to unmarshal trade event")

@@ -205,8 +205,17 @@ async def get_stats(symbol: str):
         stats["feature_importance"] = importance
 
     return stats
-
-
+# Get history was being called but was not defined
+@app.get("/api/v1/ml/{symbol}/history")
+async def get_history(symbol: str, limit: int = 50):
+    """
+    Get historical model snapshots for the UI charts.
+    Currently returns an empty list to satisfy the frontend request.
+    """
+    return {
+        "symbol": symbol.upper(),
+        "history": [] # In a real scenario, this would query your DB
+    }
 @app.get("/api/v1/ml/all/stats")
 async def get_all_stats():
     """Get stats for all symbols at once.""" 

@@ -13,12 +13,15 @@ import (
 	"github.com/Prathamesh-Mandiye-0423/trading-platform/internal/models"
 	"github.com/Prathamesh-Mandiye-0423/trading-platform/internal/supervisor"
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/cors"
 	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/joho/godotenv"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
+
+// Added cors to import
 
 func main() {
 	if err := godotenv.Load(); err != nil {
@@ -97,6 +100,11 @@ func main() {
 	app := fiber.New(fiber.Config{AppName: "Market Engine v0.1"})
 	app.Use(recover.New())
 	app.Use(logger.New())
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: []string{"http://localhost:3000", "http://127.0.0.1:3000"},
+		AllowHeaders: []string{"Origin", "Content-Type", "Accept"},
+		AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+	}))
 	// Added for testing
 	app.Get("/", func(c fiber.Ctx) error {
 		return c.SendString("Market Engine is Online")
